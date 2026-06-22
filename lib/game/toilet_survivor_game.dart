@@ -10,6 +10,7 @@ import 'package:toilet_survivor/config/game_config.dart';
 import 'package:toilet_survivor/game/bullet.dart';
 import 'package:toilet_survivor/game/enemy.dart';
 import 'package:toilet_survivor/game/hud_panel_component.dart';
+import 'package:toilet_survivor/game/pause_button_component.dart';
 import 'package:toilet_survivor/game/player.dart';
 import 'package:toilet_survivor/game/poop_splat_effect.dart';
 import 'package:toilet_survivor/game/prop_component.dart';
@@ -32,6 +33,8 @@ class ToiletSurvivorGame extends FlameGame {
        );
 
   static const String gameOverOverlay = 'gameOver';
+  static const String titleOverlay = 'title';
+  static const String pauseOverlay = 'pause';
 
   final AdsManager adsManager;
   final double viewWidth;
@@ -71,8 +74,11 @@ class ToiletSurvivorGame extends FlameGame {
   late final HudPanelComponent hudPanel;
   late final TextComponent hpText;
   late final TextComponent scoreText;
+  late final PauseButtonComponent pauseButton;
 
   int score = 0;
+  bool isWaitingToStart = true;
+  bool isPaused = false;
   bool isGameOver = false;
   bool _reviveUsedThisRun = false;
   bool _rewardedReviveWatchedThisRun = false;
@@ -159,16 +165,34 @@ class ToiletSurvivorGame extends FlameGame {
     hudPanel = _hudPanel();
     hpText = _hudText(Vector2(GameConfig.hudTextX, GameConfig.hudHpY));
     scoreText = _hudText(Vector2(GameConfig.hudTextX, GameConfig.hudScoreY));
+    pauseButton = _pauseButton();
 
     await world.add(player);
     camera.follow(player, snap: true);
-    await camera.viewport.addAll([joystick, hudPanel, hpText, scoreText]);
+    await camera.viewport.addAll([
+      joystick,
+      hudPanel,
+      hpText,
+      scoreText,
+      pauseButton,
+    ]);
     _updateHud();
+    _setGameplayHudVisible(false);
+    overlays.add(titleOverlay);
     _logAssetUsageReport();
   }
 
   @override
   void update(double dt) {
+    if (isWaitingToStart) {
+      super.update(dt);
+      return;
+    }
+
+    if (isPaused) {
+      return;
+    }
+
     if (isGameOver) {
       return;
     }
@@ -225,6 +249,39 @@ class ToiletSurvivorGame extends FlameGame {
     adsManager.showRewardedRevive(onRewarded: _completeRewardedRevive);
   }
 
+  void pauseGame() {
+    if (isWaitingToStart || isPaused || isGameOver) {
+      return;
+    }
+
+    isPaused = true;
+    joystick.onDragStop();
+    _setJoystickVisible(false);
+    _setPauseButtonVisible(false);
+    overlays.add(pauseOverlay);
+  }
+
+  void resumeGame() {
+    if (!isPaused) {
+      return;
+    }
+
+    isPaused = false;
+    _setJoystickVisible(true);
+    _setPauseButtonVisible(true);
+    overlays.remove(pauseOverlay);
+  }
+
+  void startRun() {
+    if (!isWaitingToStart) {
+      return;
+    }
+
+    isWaitingToStart = false;
+    restart();
+    overlays.remove(titleOverlay);
+  }
+
   void restart() {
     for (final component in [
       ...enemies,
@@ -247,6 +304,7 @@ class ToiletSurvivorGame extends FlameGame {
     _reviveUsedThisRun = false;
     _rewardedReviveWatchedThisRun = false;
     _restartRequested = false;
+    isPaused = false;
     _shootTimer = 0;
     _spawnTimer = 0;
     _elapsedTime = 0;
@@ -255,14 +313,16 @@ class ToiletSurvivorGame extends FlameGame {
     _cloudDamageWindowTimer = 0;
     _cloudDamageInWindow = 0;
     _enemySpawnIndex = 0;
+    isWaitingToStart = false;
     isGameOver = false;
 
     joystick.onDragStop();
-    _setJoystickVisible(true);
+    _setGameplayHudVisible(true);
     _resetHudDamageFeedback();
     tiledBackground.tileSprite = _randomSprite(floorTileSprites);
     player.reset(playerSpawnPosition);
     overlays.remove(gameOverOverlay);
+    overlays.remove(pauseOverlay);
     _updateHud();
   }
 
@@ -274,13 +334,14 @@ class ToiletSurvivorGame extends FlameGame {
     _reviveUsedThisRun = true;
     _rewardedReviveWatchedThisRun = true;
     _restartRequested = false;
+    isPaused = false;
     isGameOver = false;
     _hudDamageFlashTimer = 0;
     _cloudDamageWindowTimer = 0;
     _cloudDamageInWindow = 0;
 
     joystick.onDragStop();
-    _setJoystickVisible(true);
+    _setGameplayHudVisible(true);
     _resetHudDamageFeedback();
     _clearRewardedReviveSafeArea();
     player.revive(
@@ -288,6 +349,7 @@ class ToiletSurvivorGame extends FlameGame {
       invincibilityDuration: GameConfig.rewardedReviveInvincibilityDuration,
     );
     overlays.remove(gameOverOverlay);
+    overlays.remove(pauseOverlay);
     _updateHud();
   }
 
@@ -780,6 +842,45 @@ class ToiletSurvivorGame extends FlameGame {
     ).withAlpha(visible ? GameConfig.joystickBackgroundAlpha : 0);
   }
 
+  void _setGameplayHudVisible(bool visible) {
+    _setJoystickVisible(visible);
+    _setHudVisible(visible);
+    _setPauseButtonVisible(visible);
+  }
+
+  void _setPauseButtonVisible(bool visible) {
+    pauseButton.position = visible
+        ? _pauseButtonVisiblePosition()
+        : Vector2(
+            viewWidth + GameConfig.pauseButtonSize * 2,
+            -GameConfig.pauseButtonSize * 2,
+          );
+  }
+
+  Vector2 _pauseButtonVisiblePosition() {
+    return Vector2(
+      viewWidth - GameConfig.pauseButtonMargin - GameConfig.pauseButtonSize,
+      GameConfig.pauseButtonMargin,
+    );
+  }
+
+  void _setHudVisible(bool visible) {
+    final hiddenPosition = Vector2(
+      -GameConfig.hudPanelWidth * 2,
+      -GameConfig.hudPanelHeight * 2,
+    );
+
+    hudPanel.position = visible
+        ? Vector2(GameConfig.hudPanelX, GameConfig.hudPanelY)
+        : hiddenPosition.clone();
+    hpText.position = visible
+        ? Vector2(GameConfig.hudTextX, GameConfig.hudHpY)
+        : hiddenPosition.clone();
+    scoreText.position = visible
+        ? Vector2(GameConfig.hudTextX, GameConfig.hudScoreY)
+        : hiddenPosition.clone();
+  }
+
   TextComponent _hudText(Vector2 position) {
     return TextComponent(
       position: position,
@@ -807,6 +908,14 @@ class ToiletSurvivorGame extends FlameGame {
       slimeDripSprite: hudSlimeDripSprite,
       position: Vector2(GameConfig.hudPanelX, GameConfig.hudPanelY),
       size: Vector2(GameConfig.hudPanelWidth, GameConfig.hudPanelHeight),
+    );
+  }
+
+  PauseButtonComponent _pauseButton() {
+    return PauseButtonComponent(
+      onPressed: pauseGame,
+      position: _pauseButtonVisiblePosition(),
+      size: Vector2.all(GameConfig.pauseButtonSize),
     );
   }
 
@@ -1498,6 +1607,7 @@ class ToiletSurvivorGame extends FlameGame {
     adsManager.recordGameOver();
     joystick.onDragStop();
     _setJoystickVisible(false);
+    _setPauseButtonVisible(false);
     overlays.add(gameOverOverlay);
   }
 

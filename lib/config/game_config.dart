@@ -97,6 +97,8 @@ class GameConfig {
   static const double hudTextX = 17;
   static const double hudHpY = 13;
   static const double hudScoreY = 37;
+  static const double pauseButtonSize = 34;
+  static const double pauseButtonMargin = 8;
 
   static const double propBarrelWidth = 40;
   static const double propBarrelTargetWidth = 42;

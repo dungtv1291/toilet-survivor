@@ -1,6 +1,6 @@
-# toilet_survivor
+# Toilet Survivor
 
-A new Flutter project.
+A pixel-art top-down mobile survival shooter built with Flutter and Flame.
 
 ## Getting Started
 

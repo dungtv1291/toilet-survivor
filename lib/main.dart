@@ -4,6 +4,8 @@ import 'package:toilet_survivor/config/game_config.dart';
 import 'package:toilet_survivor/game/toilet_survivor_game.dart';
 import 'package:toilet_survivor/services/ads_manager.dart';
 import 'package:toilet_survivor/ui/game_over_overlay.dart';
+import 'package:toilet_survivor/ui/pause_overlay.dart';
+import 'package:toilet_survivor/ui/title_screen_overlay.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -48,8 +50,14 @@ class _GameHostState extends State<_GameHost> {
             return GameWidget<ToiletSurvivorGame>(
               game: game,
               overlayBuilderMap: {
+                ToiletSurvivorGame.titleOverlay: (_, game) {
+                  return TitleScreenOverlay(game: game);
+                },
                 ToiletSurvivorGame.gameOverOverlay: (_, game) {
                   return GameOverOverlay(game: game);
+                },
+                ToiletSurvivorGame.pauseOverlay: (_, game) {
+                  return PauseOverlay(game: game);
                 },
               },
             );
