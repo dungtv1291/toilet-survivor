@@ -36,6 +36,8 @@ class SoundManager {
   String? _currentAmbiencePath;
   AudioPlayer? _musicPlayer;
   AudioPlayer? _ambiencePlayer;
+  Future<void> Function()? _bossSoundStop;
+  int _bossSoundToken = 0;
 
   Future<void> initialize() async {
     if (_initialized) {
@@ -47,7 +49,10 @@ class SoundManager {
 
     try {
       await FlameAudio.audioCache.loadAll(SoundPaths.all);
-      _pools[_SoundKey.uiClick] = await _pool(SoundPaths.uiClick, maxPlayers: 2);
+      _pools[_SoundKey.uiClick] = await _pool(
+        SoundPaths.uiClick,
+        maxPlayers: 2,
+      );
       _pools[_SoundKey.playerShooting] = await _pool(
         SoundPaths.playerShooting,
         maxPlayers: 4,
@@ -153,11 +158,29 @@ class SoundManager {
   }
 
   void playBossSpawn() {
-    _play(
-      _SoundKey.bossSound,
-      volume: 0.70,
-      cooldown: const Duration(seconds: 4),
-    );
+    if (!_audioAvailable ||
+        !_canPlay(_SoundKey.bossSound, const Duration(seconds: 4))) {
+      return;
+    }
+
+    final pool = _pools[_SoundKey.bossSound];
+    if (pool == null) {
+      return;
+    }
+
+    final token = ++_bossSoundToken;
+    unawaited(_startBossSound(pool, token, 0.70 * _sfxVolume));
+  }
+
+  void stopBossSound() {
+    _bossSoundToken++;
+    final stop = _bossSoundStop;
+    _bossSoundStop = null;
+    if (stop == null) {
+      return;
+    }
+
+    unawaited(_stopBossSound(stop));
   }
 
   Future<void> startRunAudioForTile(String tilePath) async {
@@ -234,11 +257,7 @@ class SoundManager {
     }
   }
 
-  void _play(
-    _SoundKey key, {
-    double volume = 1.0,
-    required Duration cooldown,
-  }) {
+  void _play(_SoundKey key, {double volume = 1.0, required Duration cooldown}) {
     if (!_audioAvailable || !_canPlay(key, cooldown)) {
       return;
     }
@@ -260,6 +279,34 @@ class SoundManager {
       await pool.start(volume: volume);
     } catch (error) {
       debugPrint('SoundManager SFX failed ($key): $error');
+    }
+  }
+
+  Future<void> _startBossSound(AudioPool pool, int token, double volume) async {
+    try {
+      final previousStop = _bossSoundStop;
+      _bossSoundStop = null;
+      if (previousStop != null) {
+        await previousStop();
+      }
+
+      final stop = await pool.start(volume: volume);
+      if (token != _bossSoundToken) {
+        await stop();
+        return;
+      }
+
+      _bossSoundStop = stop;
+    } catch (error) {
+      debugPrint('SoundManager boss SFX failed: $error');
+    }
+  }
+
+  Future<void> _stopBossSound(Future<void> Function() stop) async {
+    try {
+      await stop();
+    } catch (error) {
+      debugPrint('SoundManager boss SFX stop failed: $error');
     }
   }
 

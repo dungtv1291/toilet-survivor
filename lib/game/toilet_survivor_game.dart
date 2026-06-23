@@ -296,6 +296,8 @@ class ToiletSurvivorGame extends FlameGame {
   }
 
   void restart() {
+    soundManager.stopBossSound();
+
     for (final component in [
       ...enemies,
       ...bullets,
@@ -376,6 +378,9 @@ class ToiletSurvivorGame extends FlameGame {
     for (final enemy in enemies.toList()) {
       if (enemy.position.distanceToSquared(player.position) <=
           safeRadiusSquared) {
+        if (enemy.type == EnemyType.boss) {
+          soundManager.stopBossSound();
+        }
         enemy.removeFromParent();
         enemies.remove(enemy);
       }
@@ -1414,6 +1419,7 @@ class ToiletSurvivorGame extends FlameGame {
     soundManager.playEnemyDeath();
     _spawnSplat(enemy);
     if (enemy.type == EnemyType.boss) {
+      soundManager.stopBossSound();
       _spawnStinkEffect(
         enemy.position,
         size: GameConfig.bossEnemySize * 1.1,
@@ -1668,6 +1674,7 @@ class ToiletSurvivorGame extends FlameGame {
     joystick.onDragStop();
     _setJoystickVisible(false);
     _setPauseButtonVisible(false);
+    soundManager.stopBossSound();
     unawaited(soundManager.pauseRunAudio());
     overlays.add(gameOverOverlay);
   }
