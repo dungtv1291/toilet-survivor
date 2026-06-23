@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flame/components.dart';
@@ -18,13 +19,16 @@ import 'package:toilet_survivor/game/sludge_puddle_component.dart';
 import 'package:toilet_survivor/game/stink_cloud_hazard.dart';
 import 'package:toilet_survivor/game/tiled_background.dart';
 import 'package:toilet_survivor/services/ads_manager.dart';
+import 'package:toilet_survivor/services/sound_manager.dart';
 
 class ToiletSurvivorGame extends FlameGame {
   ToiletSurvivorGame({
     AdsManager? adsManager,
+    SoundManager? soundManager,
     this.viewWidth = GameConfig.viewWidth,
     this.viewHeight = GameConfig.viewHeight,
   }) : adsManager = adsManager ?? AdsManager.instance,
+       soundManager = soundManager ?? SoundManager.instance,
        super(
          camera: CameraComponent.withFixedResolution(
            width: viewWidth,
@@ -37,6 +41,7 @@ class ToiletSurvivorGame extends FlameGame {
   static const String pauseOverlay = 'pause';
 
   final AdsManager adsManager;
+  final SoundManager soundManager;
   final double viewWidth;
   final double viewHeight;
 
@@ -92,6 +97,7 @@ class ToiletSurvivorGame extends FlameGame {
   double _cloudDamageWindowTimer = 0;
   double _cloudDamageInWindow = 0;
   int _enemySpawnIndex = 0;
+  String _currentFloorTilePath = AssetPaths.floorDirt;
 
   Vector2 get playerSpawnPosition {
     return Vector2(GameConfig.worldWidth / 2, GameConfig.worldHeight / 2);
@@ -111,6 +117,7 @@ class ToiletSurvivorGame extends FlameGame {
     );
 
     await images.loadAll(AssetPaths.allImages);
+    await soundManager.initialize();
 
     playerIdleAnimations = _idleAnimations(
       AssetPaths.playerSheet,
@@ -147,9 +154,7 @@ class ToiletSurvivorGame extends FlameGame {
     hudCornerSprite = Sprite(images.fromCache(AssetPaths.hudCorner));
     hudSlimeDripSprite = Sprite(images.fromCache(AssetPaths.hudSlimeDrip));
 
-    tiledBackground = TiledBackground(
-      tileSprite: _randomSprite(floorTileSprites),
-    );
+    tiledBackground = TiledBackground(tileSprite: _selectFloorTileSprite());
     world.add(tiledBackground);
     _addProps();
     _addSludgePuddles();
@@ -218,6 +223,7 @@ class ToiletSurvivorGame extends FlameGame {
     _handleBulletEnemyCollisions();
     _handleEnemyPlayerCollisions();
     _handleEnemyVisualEffects(dt);
+    _handleEnemySpawnSounds();
     _updateCloudDamageWindow(dt);
     _handleStinkCloudDamage(dt);
     _cleanupRemovedComponents();
@@ -230,6 +236,7 @@ class ToiletSurvivorGame extends FlameGame {
       return;
     }
 
+    soundManager.playUiClick();
     _restartRequested = true;
     adsManager.showInterstitialAfterGameOver(
       skipBecauseRewardedRevive: _rewardedReviveWatchedThisRun,
@@ -241,6 +248,7 @@ class ToiletSurvivorGame extends FlameGame {
   }
 
   void requestRewardedRevive() {
+    soundManager.playUiClick();
     if (!canShowRewardedRevive) {
       adsManager.loadRewardedAd();
       return;
@@ -254,10 +262,12 @@ class ToiletSurvivorGame extends FlameGame {
       return;
     }
 
+    soundManager.playUiClick();
     isPaused = true;
     joystick.onDragStop();
     _setJoystickVisible(false);
     _setPauseButtonVisible(false);
+    unawaited(soundManager.pauseRunAudio());
     overlays.add(pauseOverlay);
   }
 
@@ -266,9 +276,11 @@ class ToiletSurvivorGame extends FlameGame {
       return;
     }
 
+    soundManager.playUiClick();
     isPaused = false;
     _setJoystickVisible(true);
     _setPauseButtonVisible(true);
+    unawaited(soundManager.resumeRunAudio());
     overlays.remove(pauseOverlay);
   }
 
@@ -277,6 +289,7 @@ class ToiletSurvivorGame extends FlameGame {
       return;
     }
 
+    soundManager.playUiClick();
     isWaitingToStart = false;
     restart();
     overlays.remove(titleOverlay);
@@ -319,7 +332,8 @@ class ToiletSurvivorGame extends FlameGame {
     joystick.onDragStop();
     _setGameplayHudVisible(true);
     _resetHudDamageFeedback();
-    tiledBackground.tileSprite = _randomSprite(floorTileSprites);
+    tiledBackground.tileSprite = _selectFloorTileSprite();
+    unawaited(soundManager.startRunAudioForTile(_currentFloorTilePath));
     player.reset(playerSpawnPosition);
     overlays.remove(gameOverOverlay);
     overlays.remove(pauseOverlay);
@@ -343,6 +357,7 @@ class ToiletSurvivorGame extends FlameGame {
     joystick.onDragStop();
     _setGameplayHudVisible(true);
     _resetHudDamageFeedback();
+    unawaited(soundManager.resumeRunAudio());
     _clearRewardedReviveSafeArea();
     player.revive(
       GameConfig.playerMaxHp * GameConfig.rewardedReviveHpRatio,
@@ -404,6 +419,16 @@ class ToiletSurvivorGame extends FlameGame {
       return null;
     }
     return sprites[_random.nextInt(sprites.length)];
+  }
+
+  Sprite? _selectFloorTileSprite() {
+    if (AssetPaths.tileSprites.isEmpty) {
+      return null;
+    }
+
+    _currentFloorTilePath =
+        AssetPaths.tileSprites[_random.nextInt(AssetPaths.tileSprites.length)];
+    return Sprite(images.fromCache(_currentFloorTilePath));
   }
 
   Vector2 _displaySizeForSprite(Sprite sprite, double targetWidth) {
@@ -957,6 +982,7 @@ class ToiletSurvivorGame extends FlameGame {
     bullets.add(bullet);
     world.add(bullet);
     _spawnMuzzleFlash(direction);
+    soundManager.playPlayerShooting();
   }
 
   void _spawnEnemy() {
@@ -1172,6 +1198,7 @@ class ToiletSurvivorGame extends FlameGame {
         bullet.removeFromParent();
         enemy.takeDamage(GameConfig.bulletDamage);
         _spawnHitSpark(bullet.position);
+        soundManager.playBulletHit();
 
         if (enemy.isDead) {
           _killEnemy(enemy);
@@ -1198,6 +1225,7 @@ class ToiletSurvivorGame extends FlameGame {
       if (!player.takeDamage(GameConfig.enemyContactDamage)) {
         continue;
       }
+      soundManager.playPlayerDamage();
       _triggerDamageFeedback();
       enemy.markDamageDealt();
 
@@ -1267,6 +1295,28 @@ class ToiletSurvivorGame extends FlameGame {
     }
   }
 
+  void _handleEnemySpawnSounds() {
+    final visibleBounds = camera.visibleWorldRect.inflate(32);
+    for (final enemy in enemies) {
+      if (!enemy.isMounted ||
+          enemy.isDead ||
+          enemy.spawnSoundPlayed ||
+          !visibleBounds.contains(enemy.position.toOffset())) {
+        continue;
+      }
+
+      enemy.spawnSoundPlayed = true;
+      switch (enemy.type) {
+        case EnemyType.snake:
+          soundManager.playSnakeSpawn();
+        case EnemyType.boss:
+          soundManager.playBossSpawn();
+        case EnemyType.basic:
+          break;
+      }
+    }
+  }
+
   void _handleSludgePuddles() {
     for (final puddle in sludgePuddles) {
       if (!puddle.isMounted ||
@@ -1283,6 +1333,7 @@ class ToiletSurvivorGame extends FlameGame {
 
       player.startSlide(movement);
       puddle.markTriggered();
+      soundManager.playSludgePuddle();
       return;
     }
   }
@@ -1305,6 +1356,7 @@ class ToiletSurvivorGame extends FlameGame {
       if (!player.takeDamage(damage)) {
         continue;
       }
+      soundManager.playPlayerDamage();
       _triggerDamageFeedback();
       if (player.hp <= 0) {
         _endGame();
@@ -1359,6 +1411,7 @@ class ToiletSurvivorGame extends FlameGame {
     score += enemy.stats.score;
     enemy.removeFromParent();
 
+    soundManager.playEnemyDeath();
     _spawnSplat(enemy);
     if (enemy.type == EnemyType.boss) {
       _spawnStinkEffect(
@@ -1479,7 +1532,7 @@ class ToiletSurvivorGame extends FlameGame {
   }
 
   void _spawnSnakeStinkCloud(Vector2 position) {
-    _spawnStinkCloud(
+    final spawned = _spawnStinkCloud(
       StinkCloudKind.small,
       stinkCloudSmallSprite,
       position,
@@ -1495,10 +1548,13 @@ class ToiletSurvivorGame extends FlameGame {
       opacityAlpha: GameConfig.snakeCloudOpacityAlpha,
       maxActiveClouds: GameConfig.maxActiveSmallStinkClouds,
     );
+    if (spawned) {
+      soundManager.playEnemyPoop();
+    }
   }
 
   void _spawnBossStinkCloud(Vector2 position) {
-    _spawnStinkCloud(
+    final spawned = _spawnStinkCloud(
       StinkCloudKind.skull,
       stinkCloudSkullSprite,
       position,
@@ -1514,9 +1570,12 @@ class ToiletSurvivorGame extends FlameGame {
       opacityAlpha: GameConfig.bossCloudOpacityAlpha,
       maxActiveClouds: GameConfig.maxActiveSkullStinkClouds,
     );
+    if (spawned) {
+      soundManager.playEnemyPoop();
+    }
   }
 
-  void _spawnStinkCloud(
+  bool _spawnStinkCloud(
     StinkCloudKind kind,
     Sprite sprite,
     Vector2 position, {
@@ -1534,7 +1593,7 @@ class ToiletSurvivorGame extends FlameGame {
         .where((cloud) => cloud.kind == kind && cloud.isMounted)
         .toList();
     if (sameKindClouds.length >= maxActiveClouds) {
-      return;
+      return false;
     }
 
     final cloudPosition = _clampCloudPositionToVisibleWorld(
@@ -1558,6 +1617,7 @@ class ToiletSurvivorGame extends FlameGame {
     );
     stinkClouds.add(cloud);
     world.add(cloud);
+    return true;
   }
 
   Vector2 _clampCloudPositionToVisibleWorld(
@@ -1608,6 +1668,7 @@ class ToiletSurvivorGame extends FlameGame {
     joystick.onDragStop();
     _setJoystickVisible(false);
     _setPauseButtonVisible(false);
+    unawaited(soundManager.pauseRunAudio());
     overlays.add(gameOverOverlay);
   }
 

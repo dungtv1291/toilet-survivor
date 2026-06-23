@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:toilet_survivor/config/game_config.dart';
 import 'package:toilet_survivor/game/toilet_survivor_game.dart';
 import 'package:toilet_survivor/services/ads_manager.dart';
+import 'package:toilet_survivor/services/sound_manager.dart';
 import 'package:toilet_survivor/ui/game_over_overlay.dart';
 import 'package:toilet_survivor/ui/pause_overlay.dart';
 import 'package:toilet_survivor/ui/title_screen_overlay.dart';
@@ -10,6 +11,7 @@ import 'package:toilet_survivor/ui/title_screen_overlay.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AdsManager.instance.initialize();
+  await SoundManager.instance.initialize();
   runApp(const ToiletSurvivorApp());
 }
 

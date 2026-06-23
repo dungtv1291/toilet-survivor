@@ -53,6 +53,7 @@ class Enemy extends SpriteAnimationComponent {
   double visualEffectTimer = 0;
   double hazardTimer = 0;
   bool lowHpStinkEmitted = false;
+  bool spawnSoundPlayed = false;
   double _contactCooldown = 0;
   Direction facing = Direction.front;
 
